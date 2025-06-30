@@ -1,0 +1,11 @@
+lpips>=0.1.4
+matplotlib>=3.10.1
+ninja>=1.11.1.4
+pandas>=2.2.3
+requests>=2.32.3
+scikit-image>=0.25.2
+torch>=2.6.0
+torchaudio>=2.6.0
+torchvision>=0.21.0
+tqdm>=4.67.1
+gdown>=5.2.0
