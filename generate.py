@@ -86,7 +86,7 @@ def generate_random_image_set(
     
     # Generate random images using StyleGAN2
     stylegan2(
-        checkpoint_path="pretrained/ffhq.pkl",
+        checkpoint_path=STYLEGAN2_WEIGHTS_PATH,
         outdir=output_dir,
         n_samples=count,
         batch_size=batch_size,
@@ -161,6 +161,44 @@ class EmoStyle:
             plt.imsave(out_filename, generated_image)
 
 
+def _resume_next_and_last_image_ids(tmp_dir: str) -> tuple[int, int]:
+    """
+    Returns the first image ID to resume from or -1 if no images are found in the tmp directory.
+    """
+    if os.path.exists(tmp_dir):
+        existing_images = [f for f in os.listdir(tmp_dir) if f.endswith('.png')]
+        if existing_images:
+            existing_images.sort()
+            first_image = existing_images[0]
+            last_image = existing_images[-1]
+            try:
+                first_image_id = int(os.path.splitext(first_image)[0])
+                last_image_id = int(os.path.splitext(last_image)[0])
+                return first_image_id, last_image_id
+            except ValueError:
+                raise ValueError(f"Could not find from where to resume. Invalid image file name '{first_image}'. Expected format: {{image_id:06}}.png")
+        else:
+            print("Could not find from where to resume. No existing images found in the tmp directory.")
+    else:
+        print("Could not find from where to resume. No tmp directory found.")
+    
+    return -1, -1
+
+def _resume_next_emotion_index(output_dir: str, first_image_id: int) -> int:
+    """
+    Returns the first emotion index to resume from.
+    """
+    # Find generated image with the lastly generated image ID
+    if os.path.exists(output_dir):
+        existing_images = [f for f in os.listdir(output_dir) if f.startswith(f"{first_image_id:06}_va_")]
+        # The next index to generate is the number of images already generated
+        if existing_images:
+            return len(existing_images)
+    else:
+        print("Could not find from where to resume. No output directory found.")
+    
+    return 0
+
 
 # --- Main --------------------------------------------------------------------
 if __name__ == "__main__":   
@@ -176,6 +214,9 @@ if __name__ == "__main__":
                         help="Directory to save the generated images (default: 'output').")
     parser.add_argument("-c", "--force_cpu", action="store_true",
                         help="Force the program to run on CPU, even if a GPU is available.")
+    parser.add_argument("-r", "--resume", action="store_true",
+                        help="Resume from the last generated image. "
+                        "This will skip already generated images based on the content of the output and tmp directories.")
 
     # Create subparsers for different modes
     subparsers = parser.add_subparsers(dest="mode", required=True, help="Mode of operation")
@@ -259,6 +300,20 @@ if __name__ == "__main__":
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
+    # If we need to resume from a previous run, fetch previous state
+    next_image_id = 0
+    last_image_id = 0
+    next_emotion_index = 0
+    if args.resume:
+        next_image_id, last_image_id = _resume_next_and_last_image_ids(TMP_INPUT_DIR)
+        # If no images found, start from scratch
+        if next_image_id == -1:
+            args.resume = False
+            next_image_id = 0
+        else:
+            # Get next emotion index to resume from
+            next_emotion_index = _resume_next_emotion_index(args.output_dir, next_image_id)
+
     # Emotions based on mode
     emotions = None
     facial_expression_count = 0
@@ -280,47 +335,95 @@ if __name__ == "__main__":
         # Generate random emotions on the fly (later)
         facial_expression_count = args.fe_count
 
-    # Set up tmp directory for input images
-    if os.path.exists(TMP_DIR):
-        shutil.rmtree(TMP_DIR)
-    os.makedirs(TMP_INPUT_DIR)
+    # Generate random face images if we are not resuming
+    if not args.resume:
+        # Set up tmp directory for input images
+        if os.path.exists(TMP_DIR):
+            shutil.rmtree(TMP_DIR)
+        os.makedirs(TMP_INPUT_DIR)
 
     # Generate random images (format: {image_id:06}.png) and latent vectors (format: {image_id:06}.npy)
-    print(f"Generating {args.num_faces} new face identity images...")
-    generate_random_image_set(TMP_INPUT_DIR, count=args.num_faces, force_cpu=args.force_cpu)
+    lacking_face_image_count = args.num_faces - last_image_id - 1
+    if lacking_face_image_count > 0:
+        if args.resume:
+            print(f"Resuming... Generating {lacking_face_image_count} new face identity images...")
+        else:
+            print(f"Generating {args.num_faces} new face identity images...")
+        generate_random_image_set(TMP_INPUT_DIR, count=lacking_face_image_count, force_cpu=args.force_cpu)
+    else:
+        print(f"Skipping face image generation.")
 
     # Load the EmoStyle framework
     emostyle = EmoStyle(force_cpu=args.force_cpu)
 
+    if args.resume:
+        print(f"Resuming from image ID {next_image_id:06} with emotion index {next_emotion_index}...")
+
     # Generate every emotion for every input image
     if args.mode == "random":
-        print(f"Generating {facial_expression_count * args.num_faces} facial expressions...")
-        for face_id in range(args.num_faces):
+        if args.resume:
+            total = (args.num_faces - next_image_id) * facial_expression_count - next_emotion_index
+            print(f"Resuming... Generating {total} facial expressions...")
+        else:
+            print(f"Generating {facial_expression_count * args.num_faces} facial expressions...")
+
+        for face_id in range(next_image_id, args.num_faces):
             # Generate random emotions
             emotions = []
-            for _ in range(args.fe_count):
+            for _ in range(next_emotion_index, args.fe_count):
                 magnitude = random.uniform(0, 1)
-                corrected_magnitude = -((-magnitude + 1) * (1 - args.magnitude_coeff) - 1)
+                corrected_magnitude = -((-magnitude + 1) * (1 - args.magnitude_coeff) - 1) # FIXME: Right now it is just 's + (1 - s) * m'
                 angle = random.uniform(0, 2 * np.pi)
                 valence = corrected_magnitude * np.cos(angle)
                 arousal = corrected_magnitude * np.sin(angle)
                 emotions.append(Emotion(valence, arousal))
+            # Reset first emotion index in case we were resuming from previous session
+            if next_emotion_index > 0:
+                next_emotion_index = 0
+            # If emotion list is empty, skip this face
+            if not emotions:
+                print(f"Skipping face ID {face_id:06} due to no emotions generated.")
+                continue
             # Generate image
             input_image_path = f"{TMP_INPUT_DIR}/{face_id:06}.png"
             emostyle.edit_image(input_image_path, emotions, args.output_dir)
+            # Remove the image files from the tmp directory
+            input_image_path_noext = os.path.splitext(input_image_path)[0]
+            os.remove(input_image_path)  # Remove input image
+            os.remove(f"{input_image_path_noext}.npy")  # Remove latent vector
     else:
         if args.unique:
-            print(f"Generating {args.num_faces} facial expressions...")
+            if args.resume:
+                print(f"Resuming... Generating {args.num_faces - next_image_id} facial expressions...")
+            else:
+                print(f"Generating {args.num_faces} facial expressions...")
+
             # num_faces > facial_expression_count
-            for face_id in range(args.num_faces):
+            for face_id in range(next_image_id, args.num_faces):
                 emotion_index = face_id % facial_expression_count
                 input_image_path = f"{TMP_INPUT_DIR}/{face_id:06}.png"
                 emostyle.edit_image(input_image_path, [emotions[emotion_index]], args.output_dir)
+                # Remove the image files from the tmp directory
+                input_image_path_noext = os.path.splitext(input_image_path)[0]
+                os.remove(input_image_path)  # Remove input image
+                os.remove(f"{input_image_path_noext}.npy")  # Remove latent vector
         else:
-            print(f"Generating {args.num_faces * facial_expression_count} facial expressions...")
-            for face_id in range(args.num_faces):
+            if args.resume:
+                total = (args.num_faces - next_image_id) * facial_expression_count - next_emotion_index
+                print(f"Resuming... Generating {total} facial expressions...")
+            else:
+                print(f"Generating {args.num_faces * facial_expression_count} facial expressions...")
+
+            for face_id in range(next_image_id, args.num_faces):
                 input_image_path = f"{TMP_INPUT_DIR}/{face_id:06}.png"
-                emostyle.edit_image(input_image_path, emotions, args.output_dir)
+                emostyle.edit_image(input_image_path, emotions[next_emotion_index:], args.output_dir)
+                # Reset first emotion index in case we were resuming from previous session
+                if next_emotion_index > 0:
+                    next_emotion_index = 0
+                # Remove the image files from the tmp directory
+                input_image_path_noext = os.path.splitext(input_image_path)[0]
+                os.remove(input_image_path) # Remove input image
+                os.remove(f"{input_image_path_noext}.npy")  # Remove latent vector
 
     # Clean up temporary directory
     if os.path.exists(TMP_DIR):
