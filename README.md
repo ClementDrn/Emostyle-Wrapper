@@ -63,51 +63,101 @@ python3 generate.py -n 5 -e Happy -c    # Use CPU instead of GPU
 
 The `generate.py` script allows you to generate images with specific facial expressions based on predefined emotions or custom valence-arousal pairs.
 
-### Command Line Options
+To see the available options and modes, you can run:
+```sh
+python3 generate.py --help
+```
 
-Below are the available options for the `generate.py` script:
+### Command Line Parameters
 
-| Option                                                                                                        | Description                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-h, --help`                                                                                                  | Show the help message and exit.                                                                                                                                                                                                                                                                                                                                               |
-| `-n NUM_MULT, --num_mult NUM_MULT`                                                                            | Number of images multiplier (default: 1). The actual number of images to generate is equal to `num_mult * [len(emotions)\|len(valences_arousals)/2] * len(strengths)`.                                                                                                                                                                                                        |
-| `-o OUTPUT_DIR, --output_dir OUTPUT_DIR`                                                                      | Directory to save generated images (default: `output`).                                                                                                                                                                                                                                                                                                                       |
-| `-e EMOTIONS [EMOTIONS ...], --emotions EMOTIONS [EMOTIONS ...]`                                              | List of emotions to apply (default: `random`). Available emotions: `Happy`, `Delighted`, `Excited`, `Astonished`, `Aroused`, `Tense`, `Alarmed`, `Angry`, `Afraid`, `Annoyed`, `Distressed`, `Frustrated`, `Miserable`, `Sad`, `Gloomy`, `Depressed`, `Bored`, `Droopy`, `Tired`, `Sleepy`, `Calm`, `Relaxed`, `Satisfied`, `AtEase`, `Content`, `Serene`, `Glad`, `Pleased`. |
-| `-v VALENCES_AROUSALS [VALENCES_AROUSALS ...], --valences_arousals VALENCES_AROUSALS [VALENCES_AROUSALS ...]` | List of valence-arousal pairs (e.g., `valence0 arousal0 valence1 arousal1 ...`) to apply (default: `None`). Overrides `--emotions` if specified.                                                                                                                                                                                                                              |
-| `-s STRENGTHS [STRENGTHS ...], --strengths STRENGTHS [STRENGTHS ...]`                                         | List of strengths (from `0.0` to `1.0`) for each emotion (default: `1.0` for all emotions). Requires `--emotions`. Undefined with `--valences_arousals`.                                                                                                                                                                                                                      |
-| `-r, --repeat`                                                                                                | Each input image is repeatedly used until it has been edited with every emotion and strength combination.                                                                                                                                                                                                                                                                     |
-| `-c, --force_cpu`                                                                                             | Force the script to run on the CPU, even if a GPU is available.                                                                                                                                                                                                                                                                                                               |
+#### General Parameters
+
+```sh
+python3 generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] MODE [ARGS...]
+```
+
+| Parameter                                   | Description                                                          |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| `MODE`                                   | Mode of operation: `random`, `emotions`, or `va`.                     |
+| `-n NUM_FACES, --num_faces NUM_FACES`    | Number of unique face identities to generate (default: 1).           |
+| `-o OUTPUT_DIR, --output_dir OUTPUT_DIR` | Directory to save the generated images (default: `output`).          |
+| `-c, --force_cpu`                        | Force the program to run on CPU, even if a GPU is available.         |
+
+#### Random Mode (`random`):
+
+```sh
+python3 generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] random [FE_COUNT] [MAGNITUDE_COEFF]
+```
+
+| Parameter          | Description                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------ |
+| `FE_COUNT`        | Number of random facial expressions to generate per face.                            |
+| `MAGNITUDE_COEFF` | Magnitude coefficient to adjust the strength of random emotions (range: 0.0 to 1.0). |
+
+#### Emotions Mode (`emotions`):
+
+```sh
+python3 generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] emotions EMOTION0 [EMOTION1...] [-s STRENGTH0 [STRENGTH1...]] [-u]
+```
+
+| Parameter   | Description                                                                                                                                                                                                                                                                                                                                                             |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EMOTIONS` | List of predefined emotions to apply. Available emotions: `Happy`, `Delighted`, `Excited`, `Astonished`, `Aroused`, `Tense`, `Alarmed`, `Angry`, `Afraid`, `Annoyed`, `Distressed`, `Frustrated`, `Miserable`, `Sad`, `Gloomy`, `Depressed`, `Bored`, `Droopy`, `Tired`, `Sleepy`, `Calm`, `Relaxed`, `Satisfied`, `AtEase`, `Content`, `Serene`, `Glad` and `Pleased`. |
+| `-s STRENGTHS, --strengths STRENGTHS` | List of strengths (range: 0.0 to 1.0) for each emotion (default: 1.0 for all emotions). |
+| `-u, --unique`                        | Use a different face for each generated image, which means that `--num_faces` must be a multiple of `len(strengths) * len(emotions)`. If not set, the same face will be used once for each combination of emotion and strength. |
+
+#### Valence-Arousal Mode (`va`):
+
+```sh
+generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] va VALENCE0 AROUSAL0 [VALENCE1 AROUSAL1 ...] [-u]
+```
+
+| Parameter          | Description                                                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `VALENCE AROUSAL` | List of valence-arousal pairs (e.g., `valence0 arousal0 valence1 arousal1 ...`). Each pair specifies a custom emotion. |
+| `-u, --unique`    | Use a different face for each generated image, which means that `--num_faces` must be a multiple of the number of valence-arousal pairs. If not set, the same face will be used once for each valence-arousal pair. |
+
 
 ### Examples
 
 To generate a single image with a random emotion:
 ```sh
-python3 generate.py
-```
-
-To generate 512 images with the emotions "Happy" and "Sad" (2 emotions * 256 = 512):
-```sh
-python3 generate.py -n 256 -e Happy Sad
+python3 generate.py random
 ```
 
 To generate 16 images with random emotions using the CPU:
 ```sh
-python3 generate.py -n 16 -c
+python3 generate.py -n 16 -c random
+```
+
+To generate 512 images with the emotions "Happy" and "Sad" (2 emotions * 256 = 512):
+```sh
+python3 generate.py -n 256 emotions -e Happy Sad
 ```
 
 To generate 32 images with `(0.5, 0.7)` and `(-0.9, -0.1)` valence-arousal pairs:
 ```sh
-python3 generate.py -n 16 -v 0.5 0.7 -0.9 -0.1
+python3 generate.py -n 16 va 0.5 0.7 -0.9 -0.1
 ```
 
-To generate 20 images with varying strengths for the emotions:
+To generate 20 images with strengths 0.5 and 1.0  for each of the "Happy" and "Sad" emotions:
 ```sh
-python3 generate.py -n 5 -e Happy Sad -s 0.5 1.0
+python3 generate.py -n 5 emotions Happy Sad -s 0.5 1.0
 ```
 
-To generate many facial expressions with the same input image:
+To generate "Angry", "Gloomy", "Sad", and "Happy" emotions using a different face for each:
 ```sh
-python3 generate.py -n 1 -e Angry Gloomy Sad Happy -r
+python3 generate.py -n 4 -e Angry Gloomy Sad Happy -u
+```
+
+To generate 10 random facial expressions for each of 5 different random faces:
+```sh
+python3 generate.py -n 5 random 10
+```
+
+To generate 5 different random faces with a magnitude coefficient of 0.5:
+```sh
+python3 generate.py -n 5 random 1 0.5
 ```
 
 

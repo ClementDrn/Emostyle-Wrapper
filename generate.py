@@ -164,122 +164,162 @@ class EmoStyle:
 
 # --- Main --------------------------------------------------------------------
 if __name__ == "__main__":   
+    # generate.py [-n num_faces] [-o output_dir] [-c] random [fe_count] [magnitude_coeff]
+    # generate.py [-n num_faces] [-o output_dir] [-c] emotions <emotion1 [emotion2 ...]> [-s strengths...] 
+    # generate.py [-n num_faces] [-o output_dir] [-c] va <valence0 arousal0 [valence1 arousal1 ...]>
+    
     # Parse command line arguments
-    # generate.py [-n num_mult] [-o output_dir] [-e emotions...|-v valences_arousals...] [-s strengths...] [-r] [-c]
     parser = argparse.ArgumentParser(description="Generate images with specific facial expressions.")
-    parser.add_argument("-n", "--num_mult", type=int, default=1, help="Number of images multiplier (default: 1) "
-                        "The actual number of images to generate is equal to "
-                        "`num_mult * [len(emotions)|len(valences_arousals)/2] * len(strengths)`")
-    parser.add_argument("-o", "--output_dir", type=str, default="output", help="Directory to save generated images")
-    parser.add_argument("-e", "--emotions", type=str, default="random", nargs="+",
-                        help="List of emotions to apply (default: random). Available emotions: " + ", ".join(EMOTIONS.keys()))
-    parser.add_argument("-v", "--valences_arousals", type=float, default=None, nargs="+",
-                        help="List of valence-arousal pairs (valence0 arousal0 valence1 arousal1 ...) to apply "
-                             "(default: None, use --emotions instead). If specified, overrides --emotions.")
-    parser.add_argument("-s", "--strengths", type=float, default=1.0, nargs="+",
-                        help="List of strengths (from 0.0 to 1.0) for each emotion (default: 1.0). "
-                             "Requires --emotions. Undefined with --valences_arousals.")
-    parser.add_argument("-r", "--repeat", action="store_true", 
-                        help="Each input image is repeatedly used until it has been edited with every emotion and strength combination")
-    parser.add_argument("-c", "--force_cpu", action="store_true", help="Force to run on CPU, otherwise GPU will be used if available")
+    parser.add_argument("-n", "--num_faces", type=int, default=1,
+                        help="Number of unique face identities to generate (default: 1).")
+    parser.add_argument("-o", "--output_dir", type=str, default="output",
+                        help="Directory to save the generated images (default: 'output').")
+    parser.add_argument("-c", "--force_cpu", action="store_true",
+                        help="Force the program to run on CPU, even if a GPU is available.")
+
+    # Create subparsers for different modes
+    subparsers = parser.add_subparsers(dest="mode", required=True, help="Mode of operation")
+
+    # Random mode
+    random_parser = subparsers.add_parser("random", help="Generate random valence-arousal pairs.")
+    random_parser.add_argument("fe_count", type=int, help="Number of random facial expressions to generate per face.")
+    random_parser.add_argument("magnitude_coeff", type=float, help="Magnitude coefficient to adjust the strength of random emotions (0.0 to 1.0).")
+
+    # Emotions mode
+    emotions_parser = subparsers.add_parser("emotions", help="Apply predefined emotions.")
+    emotions_parser.add_argument("emotions", type=str, nargs="+",
+                                help="List of predefined emotions to apply. Available emotions: " + ", ".join(EMOTIONS.keys()) + ".")
+    emotions_parser.add_argument("-s", "--strengths", type=float, nargs="+", default=[1.0],
+                                help="List of strengths (from 0.0 to 1.0) for each emotion (default: 1.0 for all emotions).")
+    emotions_parser.add_argument("-u", "--unique", action="store_true",
+                                help="Use a different face for each generated image, "
+                                "which means that `--num_faces` must be a multiple of `len(strengths) * len(emotions)`. "
+                                "If not set, the same face will be used once for each combination of emotion and strength.")
+
+    # Valence-Arousal mode
+    va_parser = subparsers.add_parser("va", help="Apply custom valence-arousal pairs.")
+    va_parser.add_argument("valences_arousals", type=float, nargs="+",
+                        help="List of valence-arousal pairs (valence0 arousal0 valence1 arousal1 ...). Each pair specifies a custom emotion.")
+    va_parser.add_argument("-u", "--unique", action="store_true",
+                        help="Use a different face for each generated image, "
+                        "which means that `--num_faces` must be a multiple of the number of valence-arousal pairs. "
+                        "If not set, the same face will be used once for each valence-arousal pair.")
+
+    # Parse arguments
     args = parser.parse_args()
+
+    # Check that general arguments are valid
+    if args.num_faces <= 0:
+        raise ValueError("Number of face images must be a positive integer.")
+
+    # Validate arguments based on mode
+    if args.mode == "random":
+        # Check if fe_count is a positive integer
+        if args.fe_count <= 0:
+            raise ValueError("Number of facial expressions must be a positive integer.")
+        if not (0.0 <= args.magnitude_coeff <= 1.0):
+            raise ValueError(f"Invalid magnitude coefficient '{args.magnitude_coeff}'. Must be between 0.0 and 1.0.")
+    elif args.mode == "emotions":
+        # Force list for list args
+        if isinstance(args.strengths, float):
+            args.strengths = [args.strengths]
+        if isinstance(args.emotions, str):
+            args.emotions = [args.emotions]
+        # Check if the specified emotions are valid
+        for e in args.emotions:
+            if e not in EMOTIONS:
+                raise ValueError(f"Invalid emotion '{e}'. Available emotions: {', '.join(EMOTIONS.keys())}")
+        # Check if strengths are valid
+        for strength in args.strengths:
+            if not (0.0 <= strength <= 1.0):
+                raise ValueError(f"Invalid strength '{strength}'. Must be between 0.0 and 1.0.")
+        # Check if unique mode is valid
+        if args.unique:
+            if args.num_faces % (len(args.strengths) * len(args.emotions)) != 0:
+                raise ValueError(f"Number of faces ({args.num_faces}) must be a multiple of "
+                                 f"{len(args.strengths) * len(args.emotions)} for if 'unique' is specified.")
+    elif args.mode == "va":
+        # Check valences_arousals list
+        if isinstance(args.valences_arousals, float):
+            args.valences_arousals = [args.valences_arousals]
+        if len(args.valences_arousals) % 2 != 0:
+            raise ValueError("Valence-arousal pairs must be specified in pairs (valence0 arousal0 valence1 arousal1 ...).")
+        # Check if unique mode is valid
+        if args.unique:
+            if args.num_faces % (len(args.valences_arousals) // 2) != 0:
+                raise ValueError(f"Number of faces ({args.num_faces}) must be a multiple of "
+                                 f"{len(args.valences_arousals) // 2} for if 'unique' is specified.")
+    else:
+        raise ValueError(f"Invalid mode '{args.mode}'. Available modes: 'random', 'emotions', 'va'.")
+
 
     # Create output directory if it does not exist
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
-    # Check that num_mult is valid
-    if args.num_mult <= 0:
-        raise ValueError("Number of images must be a positive integer.")
-
-    # Check what type of parameters are specified
-    are_emotions_random = args.emotions == ["random"]
-    is_va_specified = args.valences_arousals is not None
-
-    # Force list for list args
-    if isinstance(args.strengths, float):
-        args.strengths = [args.strengths]
-    if isinstance(args.emotions, str):
-        args.emotions = [args.emotions]
-
+    # Emotions based on mode
     emotions = None
-    # If valences_arousals are specified, check if they are valid
-    if args.valences_arousals is not None:
-        if len(args.valences_arousals) % 2 != 0:
-            raise ValueError("Valence-arousal pairs must be specified in pairs (valence0 arousal0 valence1 arousal1 ...).")
+    facial_expression_count = 0
+    if args.mode == "va":
         # Create Emotion objects from the valence-arousal pairs
         print(f"Using valence-arousal pairs: {args.valences_arousals}")
         emotions = [Emotion(args.valences_arousals[i], args.valences_arousals[i + 1])
                     for i in range(0, len(args.valences_arousals), 2)]
-        print(f"Parsed emotions: {emotions}")
-        # Strengths are not used in this case, so set them to 1.0
-        args.strengths = [1.0]
-    # If emotion is "random", generate a random valence-arousal pair
-    elif args.emotions == ["random"]:
-        # Generate N random emotions
-        # Ensure that the magnitude of the valence-arousal vector is less than or equal to 1
-        emotions = []
-        for _ in range(args.num_mult):
-            angle = random.uniform(0, 2 * np.pi)
-            magnitude = random.uniform(0, 1)
-            valence = magnitude * np.cos(angle)
-            arousal = magnitude * np.sin(angle)
-            emotions.append(Emotion(valence, arousal))
-        # Since we increased the number of emotions, we need to adjust the number of images to generate
-        args.num_mult = 1
-        # Strengths are not used in this case, so set them to 1.0
-        args.strengths = [1.0]
-    # If emotions are specified, check if they are valid
-    else:
-        for e in args.emotions:
-            if e not in EMOTIONS:
-                raise ValueError(f"Invalid emotion '{e}'. Available emotions: {', '.join(EMOTIONS.keys())}")
-        # If valid, get the emotion data
-        emotions = [EMOTIONS[e] for e in args.emotions]
+        facial_expression_count = len(emotions)
+    elif args.mode == "emotions":
+        # Get the emotion data
+        emotions = [
+            Emotion(EMOTIONS[e].valence * strength, EMOTIONS[e].arousal * strength)
+            for e in args.emotions
+            for strength in args.strengths
+        ]
+        facial_expression_count = len(emotions)
+    else:   # Random mode
+        # Generate random emotions on the fly (later)
+        facial_expression_count = args.fe_count
 
-    # Check if strengths are valid
-    for strength in args.strengths:
-        if not (0.0 <= strength <= 1.0):
-            raise ValueError(f"Invalid strength '{strength}'. Must be between 0.0 and 1.0.")
-    
     # Set up tmp directory for input images
     if os.path.exists(TMP_DIR):
         shutil.rmtree(TMP_DIR)
     os.makedirs(TMP_INPUT_DIR)
 
     # Generate random images (format: {image_id:06}.png) and latent vectors (format: {image_id:06}.npy)
-    random_image_count = args.num_mult if args.repeat else args.num_mult * len(emotions) * len(args.strengths)
-    print(f"Generating {random_image_count} new face identity images...")
-    generate_random_image_set(TMP_INPUT_DIR, count=random_image_count, force_cpu=args.force_cpu)
+    print(f"Generating {args.num_faces} new face identity images...")
+    generate_random_image_set(TMP_INPUT_DIR, count=args.num_faces, force_cpu=args.force_cpu)
 
     # Load the EmoStyle framework
     emostyle = EmoStyle(force_cpu=args.force_cpu)
-    
-    # Combine emotions and strengths lists
-    weighted_emotions = [
-        Emotion(emotion.valence * strength, emotion.arousal * strength)
-        for emotion in emotions
-        for strength in args.strengths
-    ]
 
-    # If "repeat", generate every emotion for every input image
-    if args.repeat:
-        # Edit the images with every emotion and strength combination
-        for i in range(args.num_mult):
-            input_image_path = f"{TMP_INPUT_DIR}/{i:06}.png"
-            emostyle.edit_image(input_image_path, weighted_emotions, args.output_dir)
-    # If not "repeat", use a different input image for each edit
+    # Generate every emotion for every input image
+    print(f"Generating {facial_expression_count} facial expressions...")
+    if args.mode == "random":
+        for face_id in range(args.num_faces):
+            # Generate random emotions
+            emotions = []
+            for _ in range(args.fe_count):
+                magnitude = random.uniform(0, 1)
+                corrected_magnitude = -((-magnitude + 1) * (1 - args.magnitude_coeff) - 1)
+                angle = random.uniform(0, 2 * np.pi)
+                valence = corrected_magnitude * np.cos(angle)
+                arousal = corrected_magnitude * np.sin(angle)
+                emotions.append(Emotion(valence, arousal))
+            # Generate image
+            input_image_path = f"{TMP_INPUT_DIR}/{face_id:06}.png"
+            emostyle.edit_image(input_image_path, emotions, args.output_dir)
     else:
-        for i in range(args.num_mult):
-            for j in range(len(weighted_emotions)):
-                image_index = i * len(weighted_emotions) + j
-                input_image_path = f"{TMP_INPUT_DIR}/{image_index:06}.png"
-                # Edit the image with the emotion and save it
-                emostyle.edit_image(input_image_path, [weighted_emotions[j]], args.output_dir)
+        if args.unique:
+            # num_faces > facial_expression_count
+            for face_id in range(args.num_faces):
+                emotion_index = face_id % facial_expression_count
+                input_image_path = f"{TMP_INPUT_DIR}/{face_id:06}.png"
+                emostyle.edit_image(input_image_path, [emotions[emotion_index]], args.output_dir)
+        else:
+            for face_id in range(args.num_faces):
+                input_image_path = f"{TMP_INPUT_DIR}/{face_id:06}.png"
+                emostyle.edit_image(input_image_path, emotions, args.output_dir)
 
     # Clean up temporary directory
     if os.path.exists(TMP_DIR):
         shutil.rmtree(TMP_DIR)
     
-    print(f"Generated {args.num_mult * len(emotions) * len(args.strengths)} images in '{args.output_dir}' directory.")
     print("Done.")
