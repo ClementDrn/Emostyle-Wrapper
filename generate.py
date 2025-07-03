@@ -293,8 +293,8 @@ if __name__ == "__main__":
     emostyle = EmoStyle(force_cpu=args.force_cpu)
 
     # Generate every emotion for every input image
-    print(f"Generating {facial_expression_count} facial expressions...")
     if args.mode == "random":
+        print(f"Generating {facial_expression_count * args.num_faces} facial expressions...")
         for face_id in range(args.num_faces):
             # Generate random emotions
             emotions = []
@@ -310,12 +310,14 @@ if __name__ == "__main__":
             emostyle.edit_image(input_image_path, emotions, args.output_dir)
     else:
         if args.unique:
+            print(f"Generating {args.num_faces} facial expressions...")
             # num_faces > facial_expression_count
             for face_id in range(args.num_faces):
                 emotion_index = face_id % facial_expression_count
                 input_image_path = f"{TMP_INPUT_DIR}/{face_id:06}.png"
                 emostyle.edit_image(input_image_path, [emotions[emotion_index]], args.output_dir)
         else:
+            print(f"Generating {args.num_faces * facial_expression_count} facial expressions...")
             for face_id in range(args.num_faces):
                 input_image_path = f"{TMP_INPUT_DIR}/{face_id:06}.png"
                 emostyle.edit_image(input_image_path, emotions, args.output_dir)
