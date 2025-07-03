@@ -182,8 +182,10 @@ if __name__ == "__main__":
 
     # Random mode
     random_parser = subparsers.add_parser("random", help="Generate random valence-arousal pairs.")
-    random_parser.add_argument("fe_count", type=int, help="Number of random facial expressions to generate per face.")
-    random_parser.add_argument("magnitude_coeff", type=float, help="Magnitude coefficient to adjust the strength of random emotions (0.0 to 1.0).")
+    random_parser.add_argument("fe_count", type=int, default=1, nargs="?",
+                               help="Number of random facial expressions to generate per face (default: 1).")
+    random_parser.add_argument("magnitude_coeff", type=float, default=0.0, nargs="?",
+                               help="Magnitude coefficient to adjust the strength of random emotions (0.0 to 1.0).")
 
     # Emotions mode
     emotions_parser = subparsers.add_parser("emotions", help="Apply predefined emotions.")
