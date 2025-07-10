@@ -302,7 +302,7 @@ if __name__ == "__main__":
 
     # If we need to resume from a previous run, fetch previous state
     next_image_id = 0
-    last_image_id = 0
+    last_image_id = -1
     next_emotion_index = 0
     if args.resume:
         next_image_id, last_image_id = _resume_next_and_last_image_ids(TMP_INPUT_DIR)
@@ -349,7 +349,7 @@ if __name__ == "__main__":
             print(f"Resuming... Generating {lacking_face_image_count} new face identity images...")
         else:
             print(f"Generating {args.num_faces} new face identity images...")
-        generate_random_image_set(TMP_INPUT_DIR, count=lacking_face_image_count, force_cpu=args.force_cpu)
+        generate_random_image_set(TMP_INPUT_DIR, count=args.num_faces, force_cpu=args.force_cpu)
     else:
         print(f"Skipping face image generation.")
 
