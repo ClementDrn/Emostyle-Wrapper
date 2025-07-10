@@ -1,3 +1,6 @@
 [submodule "vendor/emostyle"]
 	path = vendor/emostyle
 	url = https://github.com/ClementDrn/emostyle
+[submodule "vendor/MagFace"]
+	path = vendor/MagFace
+	url = https://github.com/ClementDrn/MagFace

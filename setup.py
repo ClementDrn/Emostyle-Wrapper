@@ -14,6 +14,7 @@ google_drive_files = {
     "emo_mapping_wplus_2.pt": "17C1-ACpPbFnaRNVYpDPrzNTYbFJPL_7h",
     "resnet50_ft_weight.pkl": "1A94PAAnwk6L7hXdBXLFosB_s0SzEhAFU",
     "model_ir_se50.pth": "1KW7bjndL3QG3sxBbZxreGHigcCCpsDgn",
+    "magface_epoch_00025.pth": "1Bd87admxOZvbIOAyTkGEntsEz3fyMt7H",
 }
 # Direct URLs
 other_files = {
