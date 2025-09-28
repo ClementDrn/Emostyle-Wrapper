@@ -39,7 +39,7 @@ Then, install the required Python packages:
 python3 -m pip install -r requirements.txt
 ```
 
-To use the API, you need to download the pretrained models first (~1.7 GB). Running the `setup.py` script will handle this for you.
+To use the API, you need to download the pretrained models first (~1.9 GB). Running the `setup.py` script will handle this for you.
 ```sh
 python3 setup.py
 ```
@@ -50,6 +50,7 @@ You should now have, in the `pretrained` directory, the weight files for these m
 - `ffhq.pkl` StyleGAN2-ADA trained on FFHQ by Karras T. et al. ([nvlabs-fi-cdn.nvidia.com](https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/ffhq.pkl))
 - `shape_predictor_68_face_landmarks.dat.bz2` from dlib ([dlib.net](http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2))
 - `model_ir_se50.pth` IR-SE50 model, an [InsightFace](https://github.com/deepinsight/insightface) reimplementation, trained by [TreB1eN](https://github.com/TreB1eN/InsightFace_Pytorch) ([drive.google.com](https://drive.google.com/file/d/1KW7bjndL3QG3sxBbZxreGHigcCCpsDgn/view?usp=sharing))
+- `magface_epoch_00025.pth` MagFace iResNet100 model trained on MS1MV2 by Q. Meng et al. ([drive.google.com](https://drive.google.com/file/d/1Bd87admxOZvbIOAyTkGEntsEz3fyMt7H/view?usp=sharing))
 
 From this point, generating images should work.
 As an example, the following command let you generate 5 random images with the emotion "happy":
@@ -57,6 +58,17 @@ As an example, the following command let you generate 5 random images with the e
 python3 generate.py -n 5 -e Happy
 python3 generate.py -n 5 -e Happy -c    # Use CPU instead of GPU
 ```
+
+### Quality filtering
+
+If you want to use the quality filtering features based on [GIQA](https://github.com/cientgu/GIQA), a bit more setup will be required.
+
+Currently, the [GIQA](https://github.com/cientgu/GIQA) repository is not provided with a license, so we are not allowed to include it in this repository. Still, we can manually clone the repository and train the model by ourselves. To do so, download the [FFHQ](https://github.com/NVlabs/ffhq-dataset) dataset that will serve as training data, and run the `setup_giqa.sh` script. 
+```sh
+./setup_giqa.sh GPU_ID PATH/TO/FFHQ/images1024x1024/
+```
+
+GIQA is now ready and the filtering commands can be used.
 
 
 ## Usage
