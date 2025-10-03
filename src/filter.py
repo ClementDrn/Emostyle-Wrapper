@@ -1,17 +1,17 @@
 import numpy as np
-from quality.quality_assessment_method import QualityAssessmentMethod
+from .quality.quality_assessment_method import QualityAssessmentMethod
 
 
-def calculate_threshold(quality_scores: dict, percentile: float = 0.5) -> float:
+def calculate_threshold(quality_scores: dict, percentage: float = 50.0) -> float:
     """
-    Calculate the quality threshold based on the specified percentile of the quality scores.
-    The higher the percentile, the higher the threshold.
+    Calculate the quality threshold based on the specified percentage of the quality scores.
+    The higher the percentage, the higher the threshold.
     """
     if not quality_scores:
         raise ValueError("Quality scores dictionary is empty.")
     
     scores = list(quality_scores.values())
-    threshold = np.percentile(scores, percentile * 100)
+    threshold = np.percentile(scores, percentage)
     return threshold
 
 

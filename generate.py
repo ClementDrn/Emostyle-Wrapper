@@ -18,6 +18,10 @@ from vendor.emostyle.models.emo_mapping import EmoMappingWplus
 from vendor.emostyle.models.stylegan2_interface import StyleGAN2
 from vendor.emostyle.models.emonet import EmoNet
 
+from src.filter import calculate_threshold
+from src.quality.giqa import GIQA
+from src.quality.magface import MagFace
+
 
 @dataclass
 class Emotion:
@@ -56,19 +60,27 @@ EMOTIONS = {
     "Pleased":      Emotion(0.993, -0.118),
 }
 
-
+# Default GPU ID
+GPU_ID = 0  # GPU selection is not supported yet 
 # Internal constants
 EMO_EMBED = 64
 STG_EMBED = 512
 INPUT_SIZE = 1024
 ITER_NUM = 500
+FILTER_INPUT_SIZE = 112
+MAX_ITERATION_COUNT = 10  # Maximum iterations for quality control loop
 # Temporary directories
 TMP_DIR = "tmp"
 TMP_INPUT_DIR = "tmp/input"
+TMP_FILTER_INPUT_DIR = "tmp/input/small"
 # Model weights paths
 STYLEGAN2_WEIGHTS_PATH = "pretrained/ffhq.pkl"
 EMOSTYLE_WEIGHTS_PATH = "pretrained/emo_mapping_wplus_2.pt"
 EMONET_WEIGHTS_PATH = "pretrained/emonet_8.pth"
+GIQA_WEIGHTS_PATH = "vendor/GIQA/weights/gmm_model.pth"
+MAGFACE_WEIGHTS_PATH = "pretrained/magface_epoch_00025.pth"
+# Script paths
+MAGFACE_SCRIPT_PATH = "vendor/MagFace/inference/gen_feat.py"
 
 
 def generate_random_image_set(
@@ -78,6 +90,7 @@ def generate_random_image_set(
 ) -> None:
     """
     Generate a set of random images and save them to the specified output directory.
+    Note: StyleGAN2 may generate more images than requested due to batching. Extra images are removed.
     """
     # Define generation batch size
     batch_size = 8
@@ -93,6 +106,18 @@ def generate_random_image_set(
         truncation_psi=0.7,
         on_cpu=force_cpu
     )
+    
+    # StyleGAN2 may generate extra images due to batching, remove excess
+    generated_images = sorted([f for f in os.listdir(output_dir) if f.endswith('.png')])
+    if len(generated_images) > count:
+        # Remove excess images (keep the first 'count' images)
+        for img_file in generated_images[count:]:
+            img_path = os.path.join(output_dir, img_file)
+            npy_path = os.path.splitext(img_path)[0] + '.npy'
+            if os.path.exists(img_path):
+                os.remove(img_path)
+            if os.path.exists(npy_path):
+                os.remove(npy_path)
 
 
 class EmoStyle:
@@ -200,11 +225,126 @@ def _resume_next_emotion_index(output_dir: str, first_image_id: int) -> int:
     return 0
 
 
+def _apply_quality_control(
+    input_dir: str,
+    quality_method: str,
+    quality_requirement: str,
+    force_cpu: bool,
+    tmp_dir: str
+) -> int:
+    """
+    Apply quality control to base face images. Returns the number of images that passed quality control.
+    
+    For percentage-based quality requirements, generates extra images upfront and keeps only the best ones.
+    For absolute quality requirements, uses an iterative approach with MAX_ITERATION_COUNT limit.
+    """
+    # Setup quality assessment method
+    if quality_method == "giqa":
+        quality_filter = GIQA(GIQA_WEIGHTS_PATH, tmp_dir, -1 if force_cpu else GPU_ID)
+    elif quality_method == "magface":
+        quality_filter = MagFace(MAGFACE_SCRIPT_PATH, MAGFACE_WEIGHTS_PATH, tmp_dir, -1 if force_cpu else GPU_ID)
+    else:
+        raise ValueError(f"Invalid quality method '{quality_method}'. Available methods: 'giqa', 'magface'.")
+    
+    # Determine if percentage or absolute quality requirement
+    is_percentage = quality_requirement.endswith('%')
+    
+    if is_percentage:
+        # Percentage-based: generate extra images upfront and keep the best ones
+        percentage = float(quality_requirement[:-1])
+        if not (0 <= percentage <= 100):
+            raise ValueError(f"Percentage must be between 0 and 100, got {percentage}")
+        
+        print(f"Applying {quality_method.upper()} quality control to keep top {100-percentage}% of base face images...")
+        
+        # Calculate quality scores for all base images
+        quality_scores = quality_filter.calculate_quality_scores(input_dir)
+        if not quality_scores:
+            print("No images found for quality assessment.")
+            return 0
+        
+        # Calculate threshold as the percentile to remove bottom X% of images
+        threshold_value = calculate_threshold(quality_scores, percentage)
+        
+        # Remove images below threshold
+        removed_count = 0
+        for image_path, score in quality_scores.items():
+            if score < threshold_value:
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+                    # Also remove corresponding .npy file
+                    npy_path = os.path.splitext(image_path)[0] + '.npy'
+                    if os.path.exists(npy_path):
+                        os.remove(npy_path)
+                    removed_count += 1
+        
+        kept_count = len(quality_scores) - removed_count
+        print(f"Quality control: assessed {len(quality_scores)} images, kept {kept_count} (top {100-percentage}%), removed {removed_count} (bottom {percentage}%)")
+        print(f"Quality threshold: {threshold_value:.2f}")
+        return kept_count
+    
+    else:
+        # Absolute quality requirement: iterative approach
+        threshold_value = float(quality_requirement)
+        print(f"Applying {quality_method.upper()} quality control with minimum score {threshold_value}...")
+        
+        iteration = 0
+        total_generated = 0
+        total_removed = 0
+        
+        while iteration < MAX_ITERATION_COUNT:
+            iteration += 1
+            
+            # Calculate quality scores for current images
+            quality_scores = quality_filter.calculate_quality_scores(input_dir)
+            if not quality_scores:
+                print(f"Iteration {iteration}: No images found.")
+                break
+            
+            # Find images below threshold
+            below_threshold = [(img, score) for img, score in quality_scores.items() if score < threshold_value]
+            if not below_threshold:
+                print(f"Iteration {iteration}: All {len(quality_scores)} images meet quality requirement (score >= {threshold_value})")
+                break
+            
+            print(f"Iteration {iteration}: {len(below_threshold)} out of {len(quality_scores)} images below threshold")
+            
+            # Remove poor quality images
+            for image_path, score in below_threshold:
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+                    # Also remove corresponding .npy file
+                    npy_path = os.path.splitext(image_path)[0] + '.npy'
+                    if os.path.exists(npy_path):
+                        os.remove(npy_path)
+                    total_removed += 1
+            
+            # Generate replacement images
+            replacement_count = len(below_threshold)
+            print(f"Generating {replacement_count} replacement images...")
+            generate_random_image_set(input_dir, count=replacement_count, force_cpu=force_cpu)
+            total_generated += replacement_count
+            
+            if iteration >= MAX_ITERATION_COUNT:
+                print(f"Warning: Reached maximum iteration count ({MAX_ITERATION_COUNT})")
+                # Calculate final quality scores
+                final_scores = quality_filter.calculate_quality_scores(input_dir)
+                passing = sum(1 for score in final_scores.values() if score >= threshold_value)
+                print(f"Final result: {passing} out of {len(final_scores)} images meet quality requirement")
+                return len(final_scores)
+        
+        final_count = len([f for f in os.listdir(input_dir) if f.endswith('.png')])
+        print(f"Quality control complete: {total_generated} total replacements generated, {total_removed} removed")
+        return final_count
+
+
+
+
 # --- Main --------------------------------------------------------------------
 if __name__ == "__main__":   
-    # generate.py [-n num_faces] [-o output_dir] [-c] random [fe_count] [magnitude_coeff]
-    # generate.py [-n num_faces] [-o output_dir] [-c] emotions <emotion1 [emotion2 ...]> [-s strengths...] 
-    # generate.py [-n num_faces] [-o output_dir] [-c] va <valence0 arousal0 [valence1 arousal1 ...]>
+    # generate.py [-n num_faces] [-o output_dir] [-c] [-m method] [-q quality] random [fe_count] [magnitude_coeff]
+    # generate.py [-n num_faces] [-o output_dir] [-c] [-m method] [-q quality] emotions <emotion1 [emotion2 ...]> [-s strengths...] 
+    # generate.py [-n num_faces] [-o output_dir] [-c] [-m method] [-q quality] va <valence0 arousal0 [valence1 arousal1 ...]>
     
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Generate images with specific facial expressions.")
@@ -217,6 +357,11 @@ if __name__ == "__main__":
     parser.add_argument("-r", "--resume", action="store_true",
                         help="Resume from the last generated image. "
                         "This will skip already generated images based on the content of the output and tmp directories.")
+    parser.add_argument("-m", "--method", default="giqa", type=str, choices=["giqa", "magface"],
+                        help="Quality assessment method to use for quality control (default: 'giqa').")
+    parser.add_argument("-q", "--quality", type=str, default=None,
+                        help="Quality requirement for base face images. Can be an absolute score (e.g., '50.0') or a percentage (e.g., '20%%') "
+                        "to keep only the top (100-X)%% of images. If not specified, no quality control is applied.")
 
     # Create subparsers for different modes
     subparsers = parser.add_subparsers(dest="mode", required=True, help="Mode of operation")
@@ -295,7 +440,6 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Invalid mode '{args.mode}'. Available modes: 'random', 'emotions', 'va'.")
 
-
     # Create output directory if it does not exist
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
@@ -342,32 +486,73 @@ if __name__ == "__main__":
             shutil.rmtree(TMP_DIR)
         os.makedirs(TMP_INPUT_DIR)
 
+    # Determine how many base face images to generate
+    # For percentage-based quality control, generate extra images upfront
+    num_to_generate = args.num_faces
+    if args.quality is not None and args.quality.endswith('%'):
+        percentage = float(args.quality[:-1])
+        # Generate more images to account for the percentage that will be removed
+        # Formula: to keep N images after removing bottom X%, generate N / (1 - X/100)
+        num_to_generate = int(np.ceil(args.num_faces / (1 - percentage / 100)))
+        print(f"Quality control optimization: generating {num_to_generate} base images to keep best {args.num_faces} after removing bottom {percentage}%")
+    
     # Generate random images (format: {image_id:06}.png) and latent vectors (format: {image_id:06}.npy)
-    lacking_face_image_count = args.num_faces - last_image_id - 1
+    lacking_face_image_count = num_to_generate - last_image_id - 1
     if lacking_face_image_count > 0:
         if args.resume:
-            print(f"Resuming... Generating {lacking_face_image_count} new face identity images...")
+            print(f"Resuming... Generating {lacking_face_image_count} new base face identity images...")
         else:
-            print(f"Generating {args.num_faces} new face identity images...")
-        generate_random_image_set(TMP_INPUT_DIR, count=args.num_faces, force_cpu=args.force_cpu)
+            print(f"Generating {num_to_generate} base face identity images...")
+        generate_random_image_set(TMP_INPUT_DIR, count=num_to_generate, force_cpu=args.force_cpu)
     else:
-        print(f"Skipping face image generation.")
-
+        print(f"Skipping base face image generation.")
+    
+    # Apply quality control to base face images (if specified)
+    if args.quality is not None:
+        actual_face_count = _apply_quality_control(
+            input_dir=TMP_INPUT_DIR,
+            quality_method=args.method,
+            quality_requirement=args.quality,
+            force_cpu=args.force_cpu,
+            tmp_dir=TMP_DIR
+        )
+        print(f"Quality control complete: {actual_face_count} base face images ready for emotion editing")
+        
+        # Update next_image_id and args.num_faces based on actual images remaining
+        # Get the list of remaining image IDs
+        remaining_images = sorted([f for f in os.listdir(TMP_INPUT_DIR) if f.endswith('.png')])
+        actual_face_count = len(remaining_images)
+        
+        if actual_face_count != args.num_faces:
+            print(f"Note: {actual_face_count} base images available after quality control (requested {args.num_faces})")
+        
+        # Reset loop range to process only the remaining images
+        next_image_id = 0
+        last_image_id = actual_face_count - 1
+        args.num_faces = actual_face_count
+    
     # Load the EmoStyle framework
     emostyle = EmoStyle(force_cpu=args.force_cpu)
 
-    if args.resume:
+    # Get list of actual base face images to process
+    base_face_images = sorted([f for f in os.listdir(TMP_INPUT_DIR) if f.endswith('.png')])
+    
+    if args.resume and args.quality is None:
         print(f"Resuming from image ID {next_image_id:06} with emotion index {next_emotion_index}...")
+        base_face_images = base_face_images[next_image_id:]
 
     # Generate every emotion for every input image
+    total = len(base_face_images) * facial_expression_count
+    if next_emotion_index > 0:
+        total -= next_emotion_index
+    
     if args.mode == "random":
-        if args.resume:
-            total = (args.num_faces - next_image_id) * facial_expression_count - next_emotion_index
-            print(f"Resuming... Generating {total} facial expressions...")
-        else:
-            print(f"Generating {facial_expression_count * args.num_faces} facial expressions...")
+        if args.resume and args.quality is None:
+            print("Resuming...", end=" ")
+        print(f"Generating {total} facial expressions...")
 
-        for face_id in range(next_image_id, args.num_faces):
+        for image_file in base_face_images:
+            face_id = int(os.path.splitext(image_file)[0])
             # Generate random emotions
             emotions = []
             for _ in range(next_emotion_index, args.fe_count):
@@ -393,29 +578,27 @@ if __name__ == "__main__":
             os.remove(f"{input_image_path_noext}.npy")  # Remove latent vector
     else:
         if args.unique:
-            if args.resume:
-                print(f"Resuming... Generating {args.num_faces - next_image_id} facial expressions...")
-            else:
-                print(f"Generating {args.num_faces} facial expressions...")
+            if args.resume and args.quality is None:
+                print("Resuming...", end=" ")
+            print(f"Generating {total} facial expressions...")
 
             # num_faces > facial_expression_count
-            for face_id in range(next_image_id, args.num_faces):
-                emotion_index = face_id % facial_expression_count
-                input_image_path = f"{TMP_INPUT_DIR}/{face_id:06}.png"
+            for idx, image_file in enumerate(base_face_images):
+                emotion_index = idx % facial_expression_count
+                input_image_path = os.path.join(TMP_INPUT_DIR, image_file)
                 emostyle.edit_image(input_image_path, [emotions[emotion_index]], args.output_dir)
                 # Remove the image files from the tmp directory
                 input_image_path_noext = os.path.splitext(input_image_path)[0]
                 os.remove(input_image_path)  # Remove input image
                 os.remove(f"{input_image_path_noext}.npy")  # Remove latent vector
         else:
-            if args.resume:
-                total = (args.num_faces - next_image_id) * facial_expression_count - next_emotion_index
+            if args.resume and args.quality is None:
                 print(f"Resuming... Generating {total} facial expressions...")
             else:
-                print(f"Generating {args.num_faces * facial_expression_count} facial expressions...")
+                print(f"Generating {total} facial expressions...")
 
-            for face_id in range(next_image_id, args.num_faces):
-                input_image_path = f"{TMP_INPUT_DIR}/{face_id:06}.png"
+            for image_file in base_face_images:
+                input_image_path = os.path.join(TMP_INPUT_DIR, image_file)
                 emostyle.edit_image(input_image_path, emotions[next_emotion_index:], args.output_dir)
                 # Reset first emotion index in case we were resuming from previous session
                 if next_emotion_index > 0:
@@ -424,7 +607,7 @@ if __name__ == "__main__":
                 input_image_path_noext = os.path.splitext(input_image_path)[0]
                 os.remove(input_image_path) # Remove input image
                 os.remove(f"{input_image_path_noext}.npy")  # Remove latent vector
-
+    
     # Clean up temporary directory
     if os.path.exists(TMP_DIR):
         shutil.rmtree(TMP_DIR)
