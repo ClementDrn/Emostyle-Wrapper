@@ -29,19 +29,19 @@ Note that you might need to use the `update-alternatives` package if you have mu
 
 Assuming that you have Python 3 installed, create a virtual environment and activate it:
 ```sh
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
 ```
 Note that to deactivate the virtual environment if you are done, you can run the `deactivate` command.
 
 Then, install the required Python packages:
 ```sh
-python3 -m pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-To use the API, you need to download the pretrained models first (~1.7 GB). Running the `setup.py` script will handle this for you.
+To use the API, you need to download the pretrained models first (~1.9 GB). Running the `setup.py` script will handle this for you.
 ```sh
-python3 setup.py
+python setup.py
 ```
 You should now have, in the `pretrained` directory, the weight files for these models:
 - `emo_mapping_wplus_2.pt` EmoStyle by Azari B. et al. ([drive.google.com](https://drive.google.com/file/d/17C1-ACpPbFnaRNVYpDPrzNTYbFJPL_7h/view?usp=sharing))
@@ -54,8 +54,28 @@ You should now have, in the `pretrained` directory, the weight files for these m
 From this point, generating images should work.
 As an example, the following command let you generate 5 random images with the emotion "happy":
 ```sh
-python3 generate.py -n 5 -e Happy
-python3 generate.py -n 5 -e Happy -c    # Use CPU instead of GPU
+python generate.py -n 5 -e Happy
+python generate.py -n 5 -e Happy -c    # Use CPU instead of GPU
+```
+
+### Quality filtering setup
+
+#### GIQA method
+
+If you want to use the quality filtering features based on [GIQA](https://github.com/cientgu/GIQA), a bit more setup will be required.
+
+Currently, the [GIQA](https://github.com/cientgu/GIQA) repository is not provided with a license, so we are not allowed to include it in this repository. Still, we can manually clone the repository and train the model by ourselves. To do so, download the [FFHQ](https://github.com/NVlabs/ffhq-dataset) dataset that will serve as training data, and run the `setup_giqa.sh` script. 
+```sh
+./setup_giqa.sh GPU_ID PATH/TO/FFHQ/images1024x1024/
+```
+
+GIQA is now ready and the filtering commands can be used.
+
+#### MagFace method
+
+The setup for the MagFace quality filtering is more straigthforward. The submodule should already be cloned in [vendor/MagFace](vendor/MagFace/), so you just need to download additional `magface_epoch_00025.pth` weights for MagFace iResNet100 model trained on MS1MV2 by Q. Meng et al. ([drive.google.com](https://drive.google.com/file/d/1Bd87admxOZvbIOAyTkGEntsEz3fyMt7H/view?usp=sharing)). The following script does it for you.
+```sh
+python setup_magface.py
 ```
 
 
@@ -65,7 +85,7 @@ The `generate.py` script allows you to generate images with specific facial expr
 
 To see the available options and modes, you can run:
 ```sh
-python3 generate.py --help
+python generate.py --help
 ```
 
 ### Command Line Parameters
@@ -73,23 +93,38 @@ python3 generate.py --help
 #### General Parameters
 
 ```sh
-python3 generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] MODE [ARGS...]
+python generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] [-m METHOD] [-q QUALITY] MODE [ARGS...]
 ```
 
-| Parameter                                   | Description                                                          |
-| ---------------------------------------- | -------------------------------------------------------------------- |
-| `MODE`                                   | Mode of operation: `random`, `emotions`, or `va`.                     |
-| `-n NUM_FACES, --num_faces NUM_FACES`    | Number of unique face identities to generate (default: 1).           |
-| `-o OUTPUT_DIR, --output_dir OUTPUT_DIR` | Directory to save the generated images (default: `output`).          |
-| `-c, --force_cpu`                        | Force the program to run on CPU, even if a GPU is available.         |
+| Parameter                                | Description                                                                                                   |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `MODE`                                   | Mode of operation: `random`, `emotions`, or `va`.                                                             |
+| `-n NUM_FACES, --num_faces NUM_FACES`    | Number of unique face identities to generate (default: 1).                                                    |
+| `-o OUTPUT_DIR, --output_dir OUTPUT_DIR` | Directory to save the generated images (default: `output`).                                                   |
+| `-c, --force_cpu`                        | Force the program to run on CPU, even if a GPU is available.                                                  |
+| `-m METHOD, --method METHOD`             | Quality assessment method for quality filtering (default: `giqa`). Available methods: `giqa`, `magface`.     |
+| `-q QUALITY, --quality QUALITY`          | Quality requirement for base face images. Percentage and absolute values are supported (e.g., `30%`, `25.0`). |
+
+##### Quality Filtering
+
+The original purpose of quality filtering is to remove images that contain artifact after StyleGAN2 generation.
+When enabled, the filtering is applied to base face images **before** emotion editing. This ensures only high-quality base faces are used for generating facial expressions.
+The higher the threshold, the stricter the filtering.  
+
+If a percentage is provided (e.g., `-q 30%`), extra base images are generated in order to have to intended number of images after one filtering. If an absolute quality score is provied (e.g., `-q 25.0`), an iterative loop (max 10 iterations) generates and removes images until they all meet the desired quality score. Note the score distributions are different between each quality assessment method.
+
+**Quality Assessment Methods**:
+- `giqa`: Uses Generated Image Quality Assessment (requires additional setup, see [Quality filtering setup](#quality-filtering-setup)). Recommended for best results.
+- `magface`: Uses face recognition quality based on MagFace feature magnitude. Not recommended as it gives poor results for artifact filtering.
+
 
 #### Random Mode (`random`):
 
 ```sh
-python3 generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] random [FE_COUNT] [MAGNITUDE_COEFF]
+python generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] random [FE_COUNT] [MAGNITUDE_COEFF]
 ```
 
-| Parameter          | Description                                                                          |
+| Parameter         | Description                                                                          |
 | ----------------- | ------------------------------------------------------------------------------------ |
 | `FE_COUNT`        | Number of random facial expressions to generate per face.                            |
 | `MAGNITUDE_COEFF` | Magnitude coefficient to adjust the strength of random emotions (range: 0.0 to 1.0). |
@@ -97,14 +132,14 @@ python3 generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] random [FE_COUNT] [MAGNI
 #### Emotions Mode (`emotions`):
 
 ```sh
-python3 generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] emotions EMOTION0 [EMOTION1...] [-s STRENGTH0 [STRENGTH1...]] [-u]
+python generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] emotions EMOTION0 [EMOTION1...] [-s STRENGTH0 [STRENGTH1...]] [-u]
 ```
 
-| Parameter   | Description                                                                                                                                                                                                                                                                                                                                                             |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `EMOTIONS` | List of predefined emotions to apply. Available emotions: `Happy`, `Delighted`, `Excited`, `Astonished`, `Aroused`, `Tense`, `Alarmed`, `Angry`, `Afraid`, `Annoyed`, `Distressed`, `Frustrated`, `Miserable`, `Sad`, `Gloomy`, `Depressed`, `Bored`, `Droopy`, `Tired`, `Sleepy`, `Calm`, `Relaxed`, `Satisfied`, `AtEase`, `Content`, `Serene`, `Glad` and `Pleased`. |
-| `-s STRENGTHS, --strengths STRENGTHS` | List of strengths (range: 0.0 to 1.0) for each emotion (default: 1.0 for all emotions). |
-| `-u, --unique`                        | Use a different face for each generated image, which means that `--num_faces` must be a multiple of `len(strengths) * len(emotions)`. If not set, the same face will be used once for each combination of emotion and strength. |
+| Parameter                             | Description                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EMOTIONS`                            | List of predefined emotions to apply. Available emotions: `Happy`, `Delighted`, `Excited`, `Astonished`, `Aroused`, `Tense`, `Alarmed`, `Angry`, `Afraid`, `Annoyed`, `Distressed`, `Frustrated`, `Miserable`, `Sad`, `Gloomy`, `Depressed`, `Bored`, `Droopy`, `Tired`, `Sleepy`, `Calm`, `Relaxed`, `Satisfied`, `AtEase`, `Content`, `Serene`, `Glad` and `Pleased`. |
+| `-s STRENGTHS, --strengths STRENGTHS` | List of strengths (range: 0.0 to 1.0) for each emotion (default: 1.0 for all emotions).                                                                                                                                                                                                                                                                                 |
+| `-u, --unique`                        | Use a different face for each generated image, which means that `--num_faces` must be a multiple of `len(strengths) * len(emotions)`. If not set, the same face will be used once for each combination of emotion and strength.                                                                                                                                         |
 
 #### Valence-Arousal Mode (`va`):
 
@@ -112,9 +147,9 @@ python3 generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] emotions EMOTION0 [EMOTI
 generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] va VALENCE0 AROUSAL0 [VALENCE1 AROUSAL1 ...] [-u]
 ```
 
-| Parameter          | Description                                                                                                            |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `VALENCE AROUSAL` | List of valence-arousal pairs (e.g., `valence0 arousal0 valence1 arousal1 ...`). Each pair specifies a custom emotion. |
+| Parameter         | Description                                                                                                                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VALENCE AROUSAL` | List of valence-arousal pairs (e.g., `valence0 arousal0 valence1 arousal1 ...`). Each pair specifies a custom emotion.                                                                                              |
 | `-u, --unique`    | Use a different face for each generated image, which means that `--num_faces` must be a multiple of the number of valence-arousal pairs. If not set, the same face will be used once for each valence-arousal pair. |
 
 
@@ -122,42 +157,52 @@ generate.py [-n NUM_FACES] [-o OUTPUT_DIR] [-c] va VALENCE0 AROUSAL0 [VALENCE1 A
 
 To generate a single image with a random emotion:
 ```sh
-python3 generate.py random
+python generate.py random
 ```
 
 To generate 16 images with random emotions using the CPU:
 ```sh
-python3 generate.py -n 16 -c random
+python generate.py -n 16 -c random
 ```
 
 To generate 512 images with the emotions "Happy" and "Sad" (2 emotions * 256 = 512):
 ```sh
-python3 generate.py -n 256 emotions -e Happy Sad
+python generate.py -n 256 emotions -e Happy Sad
 ```
 
 To generate 32 images with `(0.5, 0.7)` and `(-0.9, -0.1)` valence-arousal pairs:
 ```sh
-python3 generate.py -n 16 va 0.5 0.7 -0.9 -0.1
+python generate.py -n 16 va 0.5 0.7 -0.9 -0.1
 ```
 
 To generate 20 images with strengths 0.5 and 1.0  for each of the "Happy" and "Sad" emotions:
 ```sh
-python3 generate.py -n 5 emotions Happy Sad -s 0.5 1.0
+python generate.py -n 5 emotions Happy Sad -s 0.5 1.0
 ```
 
 To generate "Angry", "Gloomy", "Sad", and "Happy" emotions using a different face for each:
 ```sh
-python3 generate.py -n 4 -e Angry Gloomy Sad Happy -u
+python generate.py -n 4 -e Angry Gloomy Sad Happy -u
 ```
 
 To generate 10 random facial expressions for each of 5 different random faces:
 ```sh
-python3 generate.py -n 5 random 10
+python generate.py -n 5 random 10
 ```
 
 To generate 5 different random faces with a magnitude coefficient of 0.5:
 ```sh
-python3 generate.py -n 5 random 1 0.5
+python generate.py -n 5 random 1 0.5
+```
+
+To generate 10 "Happy" faces with quality control, keeping only the top 70% (removing bottom 30%):
+```sh
+python generate.py -n 10 -q 30% emotions Happy
+```
+
+To generate 5 "Sad" faces with absolute quality threshold of 25.0 using MagFace:
+```sh
+python generate.py -n 5 -m magface -q 25.0 emotions Sad
 ```
 
 
