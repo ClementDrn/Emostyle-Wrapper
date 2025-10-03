@@ -50,7 +50,6 @@ You should now have, in the `pretrained` directory, the weight files for these m
 - `ffhq.pkl` StyleGAN2-ADA trained on FFHQ by Karras T. et al. ([nvlabs-fi-cdn.nvidia.com](https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/ffhq.pkl))
 - `shape_predictor_68_face_landmarks.dat.bz2` from dlib ([dlib.net](http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2))
 - `model_ir_se50.pth` IR-SE50 model, an [InsightFace](https://github.com/deepinsight/insightface) reimplementation, trained by [TreB1eN](https://github.com/TreB1eN/InsightFace_Pytorch) ([drive.google.com](https://drive.google.com/file/d/1KW7bjndL3QG3sxBbZxreGHigcCCpsDgn/view?usp=sharing))
-- `magface_epoch_00025.pth` MagFace iResNet100 model trained on MS1MV2 by Q. Meng et al. ([drive.google.com](https://drive.google.com/file/d/1Bd87admxOZvbIOAyTkGEntsEz3fyMt7H/view?usp=sharing))
 
 From this point, generating images should work.
 As an example, the following command let you generate 5 random images with the emotion "happy":
@@ -74,9 +73,9 @@ GIQA is now ready and the filtering commands can be used.
 
 #### MagFace method
 
-The setup for the MagFace quality filtering is more straigthforward. The submodule should already be cloned in [vendor/MagFace](vendor/MagFace/), so you just need to download additional model weights with the following script.
+The setup for the MagFace quality filtering is more straigthforward. The submodule should already be cloned in [vendor/MagFace](vendor/MagFace/), so you just need to download additional `magface_epoch_00025.pth` weights for MagFace iResNet100 model trained on MS1MV2 by Q. Meng et al. ([drive.google.com](https://drive.google.com/file/d/1Bd87admxOZvbIOAyTkGEntsEz3fyMt7H/view?usp=sharing)). The following script does it for you.
 ```sh
-python generate_magface.py
+python setup_magface.py
 ```
 
 
