@@ -1,6 +1,18 @@
 # Emostyle Wrapper
 
-Wrapper API for generating facial expression images as synthetic data.
+[![Paper](https://img.shields.io/badge/Paper-Applied%20Sciences-blue?logo=doi)](https://doi.org/10.3390/app151910636)
+[![License: MIT](https://img.shields.io/github/license/ClementDrn/emostyle-wrapper)](./LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)](https://www.python.org/)
+
+Toolkit and wrapper API provided by the paper:
+
+**Generating Synthetic Facial Expression Images Using EmoStyle** [[Applied Sciences](https://doi.org/10.3390/app151910636)]  
+by Clément Gérard Daniel Darne, Changqin Quan, and Zhiwei Luo 
+
+This repository includes:
+* Wrapper API and fixes for [Emostyle](https://github.com/bihamta/emostyle) by Azari B. et al.
+* Filtering experiments to remove avoid images with artifacts.
+* Straigthforward way to generate facial expression synthetic data.
 
 ## Getting Started
 
@@ -208,8 +220,20 @@ python generate.py -n 5 -m magface -q 25.0 emotions Sad
 
 ## Credits
 
-This project is strongly based on [Emostyle](https://https://github.com/bihamta/emostyle) by Azari B. et al., which allows to generate facial expressions based on the valence-arousal model.
+This project is strongly based on [Emostyle](https://github.com/bihamta/emostyle) by Azari B. et al., which allows to generate facial expressions based on the valence-arousal model.
 
+If this repository helped you in your research, please consider citing us.
+```bibtex
+@Article{app151910636,
+    AUTHOR = {Darne, Clément Gérard Daniel and Quan, Changqin and Luo, Zhiwei},
+    TITLE = {Generating Synthetic Facial Expression Images Using EmoStyle},
+    JOURNAL = {Applied Sciences},
+    VOLUME = {15},
+    YEAR = {2025},
+    NUMBER = {19},
+    DOI = {10.3390/app151910636}
+}
+```
 
 ## License
 
