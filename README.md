@@ -11,7 +11,7 @@ by Clément Gérard Daniel Darne, Changqin Quan, and Zhiwei Luo
 
 This repository includes:
 * Wrapper API and fixes for [Emostyle](https://github.com/bihamta/emostyle) by Azari B. et al.
-* Filtering experiments to remove avoid images with artifacts.
+* Filtering experiments to remove images with artifacts.
 * Straigthforward way to generate facial expression synthetic data.
 
 ## Getting Started
